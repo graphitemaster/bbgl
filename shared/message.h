@@ -47,7 +47,7 @@ union bbgl_message_param_u {
 };
 
 struct bbgl_message_call_s {
-    char name[255];
+    int name;
     char spec[17];
     /* For functions which we expect immediate return values from;
      * e.g: glCreateProgram, glCreateShader the return value is stored
@@ -100,7 +100,7 @@ const char *bbgl_message_name(const bbgl_message_t *const message);
  */
 void bbgl_message_call(bbgl_message_t *message,
                        size_t mapping,
-                       const char *name,
+                       int name,
                        const char *spec,
                        ...);
 

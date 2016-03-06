@@ -55,7 +55,7 @@ void *mapping_translate(const mapping_t *const mapping, void *address) {
 
 void glGenBuffers(GLsizei n, GLuint *buffers) {
     mapping_t mapping = mapping_acquire(sizeof *buffers * n);
-    bbgl_message_call(bbgl_context->message, mapping.index, "GenBuffers",
+    bbgl_message_call(bbgl_context->message, mapping.index, BBGL_GENBUFFERS,
         "z*", n, mapping_translate(&mapping, mapping.address));
     bbgl_sync(bbgl_context);
     bbgl_flush(bbgl_context);
@@ -64,7 +64,7 @@ void glGenBuffers(GLsizei n, GLuint *buffers) {
 }
 
 void glBindBuffer(GLenum target, GLuint buffer) {
-    bbgl_message_call(bbgl_context->message, 0, "BindBuffer",
+    bbgl_message_call(bbgl_context->message, 0, BBGL_BINDBUFFER,
         "eI", target, buffer);
     bbgl_sync(bbgl_context);
 }
@@ -77,13 +77,13 @@ void glBufferData(GLenum target,
     if (data) {
         mapping_t mapping = mapping_acquire(size);
         memcpy(mapping.address, data, size);
-        bbgl_message_call(bbgl_context->message, mapping.index, "BufferData",
+        bbgl_message_call(bbgl_context->message, mapping.index, BBGL_BUFFERDATA,
             "eZ*e", target, size, mapping_translate(&mapping, mapping.address), usage);
         bbgl_sync(bbgl_context);
         bbgl_flush(bbgl_context);
         mapping_release(&mapping);
     } else {
-        bbgl_message_call(bbgl_context->message, 0, "BufferData",
+        bbgl_message_call(bbgl_context->message, 0, BBGL_BUFFERDATA,
             "eZ*e", target, size, NULL, usage);
         bbgl_sync(bbgl_context);
         /* No flush needed in this case */
@@ -91,13 +91,13 @@ void glBufferData(GLenum target,
 }
 
 void glEnableVertexAttribArray(GLuint index) {
-    bbgl_message_call(bbgl_context->message, 0, "EnableVertexAttribArray",
+    bbgl_message_call(bbgl_context->message, 0, BBGL_ENABLEVERTEXATTRIBARRAY,
         "I", index);
     bbgl_sync(bbgl_context);
 }
 
 void glDisableVertexAttribArray(GLuint index) {
-    bbgl_message_call(bbgl_context->message, 0, "DisableVertexAttribArray",
+    bbgl_message_call(bbgl_context->message, 0, BBGL_DISABLEVERTEXATTRIBARRAY,
         "I", index);
     bbgl_sync(bbgl_context);
 }
@@ -109,38 +109,38 @@ void glVertexAttribPointer(GLuint index,
                            GLsizei stride,
                            const GLvoid *pointer)
 {
-    bbgl_message_call(bbgl_context->message, 0, "VertexAttribPointer",
+    bbgl_message_call(bbgl_context->message, 0, BBGL_VERTEXATTRIBPOINTER,
         "Iie.z*", index, size, type, normalized, stride, pointer);
     bbgl_sync(bbgl_context);
 }
 
 void glDrawArrays(GLenum mode, GLint first, GLsizei count) {
-    bbgl_message_call(bbgl_context->message, 0, "DrawArrays",
+    bbgl_message_call(bbgl_context->message, 0, BBGL_DRAWARRAYS,
         "eiz", mode, first, count);
     bbgl_sync(bbgl_context);
 }
 
 void glClear(GLbitfield mask) {
-    bbgl_message_call(bbgl_context->message, 0, "Clear",
+    bbgl_message_call(bbgl_context->message, 0, BBGL_CLEAR,
         ":", mask);
     bbgl_sync(bbgl_context);
 }
 
 void glClearColor(GLclampf r, GLclampf g, GLclampf b, GLclampf a) {
-    bbgl_message_call(bbgl_context->message, 0, "ClearColor",
+    bbgl_message_call(bbgl_context->message, 0, BBGL_CLEARCOLOR,
         "FFFF", r, g, b, a);
     bbgl_sync(bbgl_context);
 }
 
 GLuint glCreateProgram(void) {
-    bbgl_message_call(bbgl_context->message, 0, "CreateProgram", NULL);
+    bbgl_message_call(bbgl_context->message, 0, BBGL_CREATEPROGRAM, NULL);
     bbgl_sync(bbgl_context);
     bbgl_flush(bbgl_context);
     return bbgl_context->message->value.asUInt;
 }
 
 GLuint glCreateShader(GLenum type) {
-    bbgl_message_call(bbgl_context->message, 0, "CreateShader", "e",
+    bbgl_message_call(bbgl_context->message, 0, BBGL_CREATESHADER, "e",
         type);
     bbgl_sync(bbgl_context);
     bbgl_flush(bbgl_context);
@@ -179,7 +179,7 @@ void glShaderSource(GLuint shader,
 
     bbgl_message_call(bbgl_context->message,
                       mapping.index,
-                      "ShaderSource",
+                      BBGL_SHADERSOURCE,
                       "Iz**",
                       shader,
                       count,
@@ -192,38 +192,38 @@ void glShaderSource(GLuint shader,
 }
 
 void glCompileShader(GLuint shader) {
-    bbgl_message_call(bbgl_context->message, 0, "CompileShader", "I",
+    bbgl_message_call(bbgl_context->message, 0, BBGL_COMPILESHADER, "I",
         shader);
     bbgl_sync(bbgl_context);
 }
 
 void glAttachShader(GLuint program, GLuint shader) {
-    bbgl_message_call(bbgl_context->message, 0, "AttachShader", "II",
+    bbgl_message_call(bbgl_context->message, 0, BBGL_ATTACHSHADER, "II",
         program, shader);
     bbgl_sync(bbgl_context);
 }
 
 void glLinkProgram(GLuint program) {
-    bbgl_message_call(bbgl_context->message, 0, "LinkProgram", "I",
+    bbgl_message_call(bbgl_context->message, 0, BBGL_LINKPROGRAM, "I",
         program);
     bbgl_sync(bbgl_context);
 }
 
 void glValidateProgram(GLuint program) {
-    bbgl_message_call(bbgl_context->message, 0, "ValidateProgram", "I",
+    bbgl_message_call(bbgl_context->message, 0, BBGL_VALIDATEPROGRAM, "I",
         program);
     bbgl_sync(bbgl_context);
 }
 
 void glUseProgram(GLuint program) {
-    bbgl_message_call(bbgl_context->message, 0, "UseProgram", "I",
+    bbgl_message_call(bbgl_context->message, 0, BBGL_USEPROGRAM, "I",
         program);
     bbgl_sync(bbgl_context);
     bbgl_flush(bbgl_context);
 }
 
 void glViewport(GLint x, GLint y, GLsizei width, GLsizei height) {
-    bbgl_message_call(bbgl_context->message, 0, "Viewport", "iizz",
+    bbgl_message_call(bbgl_context->message, 0, BBGL_VIEWPORT, "iizz",
         x, y, width, height);
     bbgl_sync(bbgl_context);
 }
@@ -231,7 +231,7 @@ void glViewport(GLint x, GLint y, GLsizei width, GLsizei height) {
 void glGenVertexArrays(GLsizei n, GLuint *arrays) {
     mapping_t mapping = mapping_acquire(sizeof *arrays * n);
     bbgl_message_call(bbgl_context->message, mapping.index,
-        "GenVertexArrays", "z*", n, mapping_translate(&mapping, mapping.address));
+        BBGL_GENVERTEXARRAYS, "z*", n, mapping_translate(&mapping, mapping.address));
     bbgl_sync(bbgl_context);
     bbgl_flush(bbgl_context);
     memcpy(arrays, mapping.address, sizeof *arrays * n);
@@ -239,7 +239,7 @@ void glGenVertexArrays(GLsizei n, GLuint *arrays) {
 }
 
 void glBindVertexArray(GLuint array) {
-    bbgl_message_call(bbgl_context->message, 0, "BindVertexArray", "I", array);
+    bbgl_message_call(bbgl_context->message, 0, BBGL_BINDVERTEXARRAY, "I", array);
     bbgl_sync(bbgl_context);
 }
 
@@ -248,15 +248,15 @@ GLint glGetUniformLocation(GLuint program, const GLchar *name) {
     mapping_t mapping = mapping_acquire(length);
     char *copy = mapping.address;
     memcpy(copy, name, length);
-    bbgl_message_call(bbgl_context->message, mapping.index, "GetUniformLocation", "I*",
-        program, mapping_translate(&mapping, copy));
+    bbgl_message_call(bbgl_context->message, mapping.index,
+        BBGL_GETUNIFORMLOCATION, "I*", program, mapping_translate(&mapping, copy));
     bbgl_sync(bbgl_context);
     bbgl_flush(bbgl_context);
     return bbgl_context->message->value.asInt;
 }
 
 void glUniform3f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2) {
-    bbgl_message_call(bbgl_context->message, 0, "Uniform3f",
+    bbgl_message_call(bbgl_context->message, 0, BBGL_UNIFORM3F,
         "ifff", location, v0, v1, v2);
     bbgl_sync(bbgl_context);
 }
@@ -266,7 +266,7 @@ GLenum glGetError(void) {
     bbgl_flush(bbgl_context);
 
     /* Now issue glGetError */
-    bbgl_message_call(bbgl_context->message, 0, "GetError", "");
+    bbgl_message_call(bbgl_context->message, 0, BBGL_GETERROR, "");
     bbgl_sync(bbgl_context);
     bbgl_flush(bbgl_context);
     return bbgl_context->message->value.asEnum;
@@ -274,7 +274,7 @@ GLenum glGetError(void) {
 
 void glGetShaderiv(GLuint shader, GLenum pname, GLint *params) {
     mapping_t mapping = mapping_acquire(sizeof *params);
-    bbgl_message_call(bbgl_context->message, mapping.index, "GetShaderiv",
+    bbgl_message_call(bbgl_context->message, mapping.index, BBGL_GETSHADERIV,
         "Ie*", shader, pname, mapping.address);
     bbgl_sync(bbgl_context);
     bbgl_flush(bbgl_context);
@@ -289,7 +289,7 @@ void glGetShaderInfoLog(GLuint shader, GLsizei maxLength, GLsizei *length, GLcha
 
     bbgl_message_call(bbgl_context->message,
                       mapping.index,
-                      "GetShaderInfoLog",
+                      BBGL_GETSHADERINFOLOG,
                       "Iz**",
                       shader,
                       maxLength,

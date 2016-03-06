@@ -26,9 +26,9 @@ const char *bbgl_message_name(const bbgl_message_t *const message) {
 
 /* Used only by the client */
 extern void *mapping_address_translate(size_t index, void *address);
-void bbgl_message_call(bbgl_message_t *message, size_t mapping, const char *name, const char *spec, ...) {
+void bbgl_message_call(bbgl_message_t *message, size_t mapping, int name, const char *spec, ...) {
     message->type = BBGL_MESSAGE_CALL;
-    strncpy(message->asCall.name, name, sizeof message->asCall.name);
+    message->asCall.name = name;
     message->asCall.mapping = mapping;
 
     /* Don't bother filling out the parameters if there is a null or
