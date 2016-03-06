@@ -1,11 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 #include <string.h>
 #include <limits.h>
 
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/fcntl.h>
+#include <sys/socket.h>
 
 #include "shared/list.h"
 #include "shared/message.h"
@@ -98,26 +100,99 @@ void record_destroy(record_t *record) {
     free(record);
 }
 
-int main(void) {
+/* We can't send shared memory file descriptors as integers on the socket.
+ * They need a level of translation since they don't mean the same in
+ * different processes.
+ */
+static int send_fd(int socket, int fd) {
+    struct msghdr msg = { 0 };
+    char buf[CMSG_SPACE(sizeof fd)];
+    memset(buf, '\0', sizeof buf);
+
+    struct iovec io = {
+        .iov_base = "",
+        .iov_len = 1
+    };
+
+    msg.msg_iov = &io;
+    msg.msg_iovlen = 1;
+    msg.msg_control = buf;
+    msg.msg_controllen = sizeof buf;
+
+    struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+    cmsg->cmsg_level = SOL_SOCKET;
+    cmsg->cmsg_type = SCM_RIGHTS;
+    cmsg->cmsg_len = CMSG_LEN(sizeof fd);
+
+    memmove(CMSG_DATA(cmsg), &fd, sizeof fd);
+
+    msg.msg_controllen = cmsg->cmsg_len;
+
+    return sendmsg(socket, &msg, 0) >= 0;
+}
+
+
+int main(int argc, char **argv) {
+    argc--;
+    argv++;
+
+    /* Expecting a file descriptor for the socket */
+    if (argc == 0)
+        return -1;
+
+    int fd = atoi(argv[0]);
+
+    /* Check if valid file descriptor */
+    if (fcntl(fd, F_GETFD) == -1)
+        return -1;
+
+    /* Read the initialization message from the socket */
+    char buf[4];
+    read(fd, buf, sizeof buf);
+    if (memcmp(buf, "init", 4)) {
+        /* Not a valid message */
+        return -1;
+    }
+
     bbgl_list_init(&mappings);
     bbgl_list_init(&records);
 
     bbgl_message_t *message = NULL;
+
+    /* Create shared memory mapping */
     size_t size = BBGL_ROUNDUP(BBGL_PAGESIZE, sizeof *message);
-    int fd = shm_open("/bbgl", O_RDWR, 0666);
-    if (fd == -1) {
-        fprintf(stderr, "[bbgl] (server) failed to open shared memory\n");
+    char name[PATH_MAX] = "/bbglXXXXXX";
+    mktemp(name);
+    int shm = shm_open(name, O_CREAT | O_RDWR, 0666);
+    if (shm == -1) {
+        fprintf(stderr, "[bbgl] (server) message channel open failure `%s' (%s)\n",
+            name, strerror(errno));
         return -1;
     } else {
-        printf("[bbgl] (server) opened message channel on `%d'\n", fd);
+        printf("[bbgl] (server) message channel on shared memory `%d'\n", shm);
     }
 
-    message = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (message == MAP_FAILED) {
-        fprintf(stderr, "[bbgl] (server) failed to map message channel\n");
+    /* Allocate the backing memory for the shared memory mapping */
+    if (ftruncate(shm, size) == -1) {
+        fprintf(stderr, "[bbgl] (server) message channel allocation failed (%s)\n",
+            strerror(errno));
+        close(shm);
         return -1;
     }
 
+    /* Now map it into the servers address space */
+    message = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
+    if (message == MAP_FAILED) {
+        fprintf(stderr, "[bbgl] (server) message channel mapping failed (%s)\n",
+            strerror(errno));
+        close(shm);
+        return -1;
+    }
+
+    /* Inform the client of our shared memory file descriptor */
+    send_fd(fd, shm);
+
+    /* The server can now begin its' thing */
     printf("[bbgl] (server) running ...\n");
     for (;;) {
         /* Wait for the client */
@@ -160,6 +235,11 @@ int main(void) {
                 mapping_t *mapping = bbgl_list_ref(link, mapping_t, link);
                 message->asCreate.size = mapping->size;
                 message->asCreate.index = bbgl_list_size(&mappings);
+                /* Send the file descriptor through the socket to get the
+                 * correct translation */
+                send_fd(fd, mapping->fd);
+                //bbgl_sem_post(&message->server);
+                //break;
             }
         } else if (message->type == BBGL_MESSAGE_MAPPING_DESTROY) {
             size_t index = message->asDestroy.index;

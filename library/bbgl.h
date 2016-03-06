@@ -14,6 +14,7 @@ typedef struct bbgl_s bbgl_t;
 struct bbgl_s {
     bbgl_message_t *message;
     pid_t server;
+    int pair[2];
 };
 
 int bbgl_init(bbgl_t *bbgl);

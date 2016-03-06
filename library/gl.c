@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 
 #include <sys/mman.h>
 #include <sys/fcntl.h>
@@ -8,6 +9,8 @@
 #include "bbgl.h"
 
 extern bbgl_t *bbgl_context;
+
+extern int read_fd(int socket);
 
 /* TODO: a better memory allocator aroung this mapping system */
 typedef struct {
@@ -27,27 +30,22 @@ mapping_t mapping_acquire(size_t size) {
     bbgl_context->message->asCreate.size = size;
     bbgl_sync(bbgl_context);
 
-    mapping_t value;
-    /* Get the shared memory handle */
-    value.index = bbgl_context->message->asCreate.index;
-    char buffer[1024];
-    snprintf(buffer, sizeof buffer, "/bbgl%zu", value.index);
-    int fd = shm_open(buffer, O_RDWR, 0666);
-    if (fd == -1) {
-        fprintf(stderr, "[bbgl] (client) failed to open memory mapping `%s'\n", buffer);
-        mapping_release(&value);
-        return (mapping_t){ 0, NULL };
-    }
+    /* Read file descriptor from socket */
+    int fd = read_fd(bbgl_context->pair[0]);
 
+    /* Get the shared memory handle */
+    mapping_t value;
+    value.index = bbgl_context->message->asCreate.index;
     value.address = mmap(0, bbgl_context->message->asCreate.size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (value.address == MAP_FAILED) {
-        fprintf(stderr, "[bbgl] (client) failed to map memory `%s'n", buffer);
+        fprintf(stderr, "[bbgl] (client) failed to map memory `%d' (%s)\n",
+            fd, strerror(errno));
         mapping_release(&value);
         close(fd);
         return (mapping_t){ 0, NULL };
     }
 
-    printf("[bbgl] (client) opened shared memory mapping `%s'\n", buffer);
+    printf("[bbgl] (client) opened shared memory mapping `%d'\n", fd);
     return value;
 }
 
