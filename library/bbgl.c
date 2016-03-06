@@ -15,6 +15,13 @@
 
 #include "bbgl.h"
 
+#if 0
+#define DEBUG(...) \
+    fprintf(stderr, __VA_ARGS__)
+#else
+#define DEBUG(...) do { } while(0)
+#endif
+
 /* Singleton representing the black box context */
 bbgl_t *bbgl_context = NULL;
 
@@ -64,20 +71,20 @@ int bbgl_init(bbgl_t *bbgl) {
         snprintf(fd, sizeof fd, "%d", bbgl->pair[1]);
         char *const argv[] = { "server",  fd, 0 };
         if (execv("./server/server", argv) == -1)
-            fprintf(stderr, "[bbgl] (client) failed to launch server (%s)\n", strerror(errno));
+            DEBUG("[bbgl] (client) failed to launch server (%s)\n", strerror(errno));
         exit(1);
     } else {
         /* Close the child socket file descriptor */
         close(bbgl->pair[1]);
         /* Check to make sure the server is running */
         if (kill(pid, 0) == -1 && errno == ESRCH) {
-            fprintf(stderr, "[bbgl] (client) server is not running\n");
+            DEBUG("[bbgl] (client) server is not running\n");
             return 0;
         }
-        printf("[bbgl] (client) server is running on `%d'\n", pid);
+        DEBUG("[bbgl] (client) server is running on `%d'\n", pid);
         bbgl->server = pid;
     }
-    printf("[bbgl] (client) running ...\n");
+    DEBUG("[bbgl] (client) running ...\n");
     bbgl_context = bbgl;
 
     /* Now send the initialization sequence on the socket so the server
@@ -93,28 +100,21 @@ int bbgl_init(bbgl_t *bbgl) {
     /* Check to make sure that is a valid file descriptor */
     if (fcntl(fd, F_GETFD) == -1) {
         /* Something didn't go as planned */
-        fprintf(stderr, "[bbgl] (client) invalid mapping `%d' for message channel\n",
-            fd);
+        DEBUG("[bbgl] (client) invalid mapping `%d' for message channel\n", fd);
         return 0;
     }
 
-    printf("[bbgl] (client) message channel on shared memory `%d'\n", fd);
+    DEBUG("[bbgl] (client) message channel on shared memory `%d'\n", fd);
 
     /* We now have the shared memory file descriptor from the server */
     size_t size = BBGL_ROUNDUP(BBGL_PAGESIZE, sizeof *bbgl->message);
-#if 0
-    if (ftruncate(fd, size) == -1) {
-        fprintf(stderr, "[bbgl] (client) failed to truncate shared memory\n");
-        goto failure;
-    }
-#endif
 
     bbgl->message = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (bbgl->message == MAP_FAILED) {
-        fprintf(stderr, "[bbgl] (client) failed to map message channel (%s)\n", strerror(errno));
+        DEBUG("[bbgl] (client) failed to map message channel (%s)\n", strerror(errno));
         goto failure;
     }
-    printf("[bbgl] (client) mapped message channel\n");
+    DEBUG("[bbgl] (client) mapped message channel\n");
 
     /* Initialize the semaphores */
     bbgl_sem_init(&bbgl->message->client);

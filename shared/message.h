@@ -62,6 +62,8 @@ struct bbgl_message_s {
     bbgl_sem_t client;
     bbgl_sem_t server;
     bbgl_message_type_t type;
+    /* Return value */
+    bbgl_message_param_t value;
     union {
         /* BBGL_MESSAGE_CALL */
         bbgl_message_call_t asCall;

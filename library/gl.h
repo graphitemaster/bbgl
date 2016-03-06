@@ -37,6 +37,9 @@ void glGenVertexArrays(GLsizei n, GLuint *arrays);
 void glBindVertexArray(GLuint array);
 GLint glGetUniformLocation(GLuint program, const GLchar *name);
 void glUniform3f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2);
+GLenum glGetError(void);
+void glGetShaderiv(GLuint shader, GLenum pname, GLint *params);
+void glGetShaderInfoLog(GLuint shader, GLsizei maxLength, GLsizei *length, GLchar *infoLog);
 
 #ifdef __cplusplus
 }

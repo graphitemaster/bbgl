@@ -5,13 +5,14 @@
 
 #include "library/gl.h"
 
-extern void *mapping_translate(size_t index, void *address);
+extern void *mapping_translate(size_t index, const void *address);
 
-void dispatch(bbgl_message_call_t *call) {
+void dispatch(const bbgl_message_call_t *const call,
+             bbgl_message_param_t *value)
+{
     /* This is a little tricky since we need to translate memory mappings
      * on demand for things prepared by the client.
      */
-    printf("RUNNING `%s'\n", call->name);
     if (!strcmp(call->name, "GenBuffers")) {
         glGenBuffers(call->params[0].asSizeI,
             mapping_translate(call->mapping, call->params[1].asPointer));
@@ -52,14 +53,23 @@ void dispatch(bbgl_message_call_t *call) {
                      call->params[2].asClampF,
                      call->params[3].asClampF);
     } else if (!strcmp(call->name, "CreateProgram")) {
-        call->params[0].asUInt = glCreateProgram();
+        value->asUInt = glCreateProgram();
     } else if (!strcmp(call->name, "CreateShader")) {
-        call->params[0].asUInt = glCreateShader(call->params[0].asEnum);
+        value->asUInt = glCreateShader(call->params[0].asEnum);
     } else if (!strcmp(call->name, "ShaderSource")) {
+        const GLchar **strings = mapping_translate(call->mapping,
+                                                   call->params[2].asPointer);
+        GLint *lengths = mapping_translate(call->mapping,
+                                           call->params[3].asPointer);
+        /* We need to translate incoming strings in the array since
+         * they're encoded as offsets.
+         */
+        for (GLsizei i = 0; i < call->params[1].asSizeI; i++)
+            strings[i] = mapping_translate(call->mapping, strings[i]);
         glShaderSource(call->params[0].asUInt,
                        call->params[1].asSizeI,
-                       mapping_translate(call->mapping, call->params[2].asPointer),
-                       mapping_translate(call->mapping, call->params[3].asPointer));
+                       strings,
+                       lengths);
     } else if (!strcmp(call->name, "CompileShader")) {
         glCompileShader(call->params[0].asUInt);
     } else if (!strcmp(call->name, "AttachShader")) {
@@ -78,16 +88,30 @@ void dispatch(bbgl_message_call_t *call) {
                    call->params[3].asSizeI);
     } else if (!strcmp(call->name, "GenVertexArrays")) {
         glGenVertexArrays(call->params[0].asSizeI,
-                          (GLuint *)call->params[1].asPointer);
+                          mapping_translate(call->mapping, call->params[1].asPointer));
     } else if (!strcmp(call->name, "BindVertexArray")) {
         glBindVertexArray(call->params[0].asUInt);
     } else if (!strcmp(call->name, "GetUniformLocation")) {
-        call->params[0].asInt = glGetUniformLocation(call->params[0].asUInt,
-                                                     call->params[1].asPointer);
+        value->asInt = glGetUniformLocation(call->params[0].asUInt,
+                                            mapping_translate(call->mapping, call->params[1].asPointer));
     } else if (!strcmp(call->name, "Uniform3f")) {
         glUniform3f(call->params[0].asInt,
                     call->params[1].asFloat,
                     call->params[2].asFloat,
                     call->params[3].asFloat);
+    } else if (!strcmp(call->name, "GetError")) {
+        value->asEnum = glGetError();
+    } else if (!strcmp(call->name, "GetShaderiv")) {
+        glGetShaderiv(call->params[0].asUInt,
+                      call->params[1].asEnum,
+                      mapping_translate(call->mapping, call->params[2].asPointer));
+    } else if (!strcmp(call->name, "GetshaderInfoLog")) {
+        glGetShaderInfoLog(call->params[0].asUInt,
+                           call->params[1].asSizeI,
+                           mapping_translate(call->mapping, call->params[2].asPointer),
+                           mapping_translate(call->mapping, call->params[2].asPointer));
     }
+    GLenum error = glGetError();
+    if (error != GL_NO_ERROR)
+        fprintf(stderr, "[bbgl] (server) OpenGL error calling `%s'\n", call->name);
 }

@@ -31,6 +31,12 @@ void bbgl_message_call(bbgl_message_t *message, size_t mapping, const char *name
     strncpy(message->asCall.name, name, sizeof message->asCall.name);
     message->asCall.mapping = mapping;
 
+    /* Don't bother filling out the parameters if there is a null or
+     * empty type specification string.
+     */
+    if (!spec || !*spec)
+        return;
+
     va_list va;
     va_start(va, spec);
     bbgl_message_param_t *p = message->asCall.params;

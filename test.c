@@ -33,16 +33,17 @@ static void render() {
     glEnableVertexAttribArray(0);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glDisableVertexAttribArray(0);
-    //SDL_GL_SwapWindow(gWindow);
+
     bbgl_flush(&bbgl);
 }
 
 static void add_shader(GLuint program, const char *text, GLenum type) {
     GLuint object = glCreateShader(type);
-    assert(object);
 
-    const GLchar *p[1] = { text };
-    GLint lengths[1] = { strlen(text) };
+    const GLchar *p[1];
+    p[0] = text;
+    GLint lengths[1];
+    lengths[0] = strlen(text);
     glShaderSource(object, 1, p, lengths);
 
     glCompileShader(object);
@@ -98,7 +99,6 @@ void compile_shaders() {
     glUseProgram(program);
 
     gColorLocation = glGetUniformLocation(program, "color");
-    printf("%d\n", gColorLocation);
 }
 
 int main() {
@@ -148,8 +148,17 @@ int main() {
     create_vertex_buffer();
     compile_shaders();
 
+    int frames = 0;
+    Uint32 start = SDL_GetTicks();
     int dirs[3] = { +1, +1, +1 };
     while (gRunning) {
+        ++frames;
+        Uint32 elapsed = SDL_GetTicks() - start;
+        if (elapsed) {
+            double seconds = elapsed / 1000.0;
+            double fps = frames / seconds;
+            printf("\r%g FPS\n", fps);
+        }
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             switch (e.type) {

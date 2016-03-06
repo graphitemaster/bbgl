@@ -14,10 +14,18 @@
 
 #include "context.h"
 
+#if 0
+#define DEBUG(...) \
+    fprintf(stderr, __VA_ARGS__)
+#else
+#define DEBUG(...) do { } while (0)
+#endif
+
 /* The display server context */
 static bbgl_context_t context;
 
-extern void dispatch(bbgl_message_call_t *call);
+extern void dispatch(const bbgl_message_call_t *const call,
+                     bbgl_message_param_t *value);
 
 typedef struct {
     char name[PATH_MAX];
@@ -46,7 +54,7 @@ int mapping_create(size_t size) {
     if (mapping->address == MAP_FAILED)
         goto failure;
     bbgl_list_push_back(&mappings, &mapping->link);
-    printf("[bbgl] (server) created memory mapping `%s'\n", mapping->name);
+    DEBUG("[bbgl] (server) created memory mapping `%s'\n", mapping->name);
     return 0;
 
 failure:
@@ -68,7 +76,7 @@ void mapping_destroy(mapping_t *mapping) {
     free(mapping);
 }
 
-void *mapping_translate(size_t index, void *address) {
+void *mapping_translate(size_t index, const void *address) {
     /* Get the mapping for the given index */
     bbgl_link_t *link = bbgl_list_head(&mappings);
     for (size_t i = 0; i < index - 1; i++)
@@ -131,7 +139,6 @@ static int send_fd(int socket, int fd) {
     return sendmsg(socket, &msg, 0) >= 0;
 }
 
-
 int main(int argc, char **argv) {
     argc--;
     argv++;
@@ -165,17 +172,15 @@ int main(int argc, char **argv) {
     mktemp(name);
     int shm = shm_open(name, O_CREAT | O_RDWR, 0666);
     if (shm == -1) {
-        fprintf(stderr, "[bbgl] (server) message channel open failure `%s' (%s)\n",
-            name, strerror(errno));
+        DEBUG("[bbgl] (server) message channel open failure `%s' (%s)\n", name, strerror(errno));
         return -1;
     } else {
-        printf("[bbgl] (server) message channel on shared memory `%d'\n", shm);
+        DEBUG("[bbgl] (server) message channel on shared memory `%d'\n", shm);
     }
 
     /* Allocate the backing memory for the shared memory mapping */
     if (ftruncate(shm, size) == -1) {
-        fprintf(stderr, "[bbgl] (server) message channel allocation failed (%s)\n",
-            strerror(errno));
+        DEBUG("[bbgl] (server) message channel allocation failed (%s)\n", strerror(errno));
         close(shm);
         return -1;
     }
@@ -183,8 +188,7 @@ int main(int argc, char **argv) {
     /* Now map it into the servers address space */
     message = mmap(0, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm, 0);
     if (message == MAP_FAILED) {
-        fprintf(stderr, "[bbgl] (server) message channel mapping failed (%s)\n",
-            strerror(errno));
+        DEBUG("[bbgl] (server) message channel mapping failed (%s)\n", strerror(errno));
         close(shm);
         return -1;
     }
@@ -192,42 +196,33 @@ int main(int argc, char **argv) {
     /* Inform the client of our shared memory file descriptor */
     send_fd(fd, shm);
 
-    /* The server can now begin its' thing */
-    printf("[bbgl] (server) running ...\n");
     for (;;) {
         /* Wait for the client */
-        printf("[bbgl] (server) waiting for client ...\n");
         bbgl_sem_wait(&message->client);
-        printf("[bbgl] (server) got request from client `%s'\n",
-            bbgl_message_name(message));
-
         if (message->type == BBGL_MESSAGE_SHUTDOWN) {
-            printf("[bbgl] (server) shutting down ...\n");
             bbgl_sem_post(&message->server);
             break;
         } else if (message->type == BBGL_MESSAGE_CALL) {
             if (record_create(&message->asCall) == -1) {
-                fprintf(stderr, "[bbgl] (server) failed to record call `%s'\n",
-                    message->asCall.name);
+                DEBUG("[bbgl] (server) failed to record call `%s'\n", message->asCall.name);
                 bbgl_sem_post(&message->server);
                 break;
             } else {
-                printf("[bbgl] (server) recorded call `%s'\n",
-                    message->asCall.name);
+                DEBUG("[bbgl] (server) recorded call `%s'\n", message->asCall.name);
             }
         } else if (message->type == BBGL_MESSAGE_FLUSH) {
             for (bbgl_link_t *link = bbgl_list_head(&records); link; ) {
                 record_t *record = bbgl_list_ref(link, record_t, link);
                 bbgl_link_t *next = bbgl_list_next(link);
                 bbgl_list_remove(&records, link);
-                dispatch(&record->call);
+                dispatch(&record->call, &message->value);
                 record_destroy(record);
                 link = next;
             }
             bbgl_context_flush(&context);
         } else if (message->type == BBGL_MESSAGE_MAPPING_CREATE) {
             if (mapping_create(message->asCreate.size) == -1) {
-                fprintf(stderr, "[bbgl] (server) failed to create mapping\n");
+                DEBUG("[bbgl] (server) failed to create mapping\n");
                 bbgl_sem_post(&message->server);
                 break;
             } else {
@@ -238,8 +233,6 @@ int main(int argc, char **argv) {
                 /* Send the file descriptor through the socket to get the
                  * correct translation */
                 send_fd(fd, mapping->fd);
-                //bbgl_sem_post(&message->server);
-                //break;
             }
         } else if (message->type == BBGL_MESSAGE_MAPPING_DESTROY) {
             size_t index = message->asDestroy.index;
@@ -254,12 +247,10 @@ int main(int argc, char **argv) {
         } else if (message->type == BBGL_MESSAGE_CONTEXT_CREATE) {
             context.pid = message->asContextCreate.pid;
             if (!bbgl_context_init(&context)) {
-                fprintf(stderr, "[bbgl] (server) failed to find client window\n");
+                DEBUG("[bbgl] (server) failed to find client window\n");
                 message->asContextCreate.pid = 0;
                 bbgl_sem_post(&message->server);
                 break;
-            } else {
-                printf("[bbgl] (server) found client window\n");
             }
         }
 

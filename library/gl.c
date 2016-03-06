@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <string.h>
 #include <errno.h>
 
@@ -38,14 +37,10 @@ mapping_t mapping_acquire(size_t size) {
     value.index = bbgl_context->message->asCreate.index;
     value.address = mmap(0, bbgl_context->message->asCreate.size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (value.address == MAP_FAILED) {
-        fprintf(stderr, "[bbgl] (client) failed to map memory `%d' (%s)\n",
-            fd, strerror(errno));
         mapping_release(&value);
         close(fd);
         return (mapping_t){ 0, NULL };
     }
-
-    printf("[bbgl] (client) opened shared memory mapping `%d'\n", fd);
     return value;
 }
 
@@ -138,12 +133,10 @@ void glClearColor(GLclampf r, GLclampf g, GLclampf b, GLclampf a) {
 }
 
 GLuint glCreateProgram(void) {
-    bbgl_message_call(bbgl_context->message, 0, "CreateProgram", "");
+    bbgl_message_call(bbgl_context->message, 0, "CreateProgram", NULL);
     bbgl_sync(bbgl_context);
-    /* Force the recorded things to be flushed, we need the result
-     * immediately */
     bbgl_flush(bbgl_context);
-    return bbgl_context->message->asCall.params[0].asUInt;
+    return bbgl_context->message->value.asUInt;
 }
 
 GLuint glCreateShader(GLenum type) {
@@ -151,7 +144,7 @@ GLuint glCreateShader(GLenum type) {
         type);
     bbgl_sync(bbgl_context);
     bbgl_flush(bbgl_context);
-    return bbgl_context->message->asCall.params[0].asUInt;
+    return bbgl_context->message->value.asUInt;
 }
 
 void glShaderSource(GLuint shader,
@@ -159,37 +152,67 @@ void glShaderSource(GLuint shader,
                     const GLchar **string,
                     const GLint *length)
 {
-    /* TODO: figure out */
+    size_t memory = sizeof *string * count + sizeof *length * count;
+    for (GLsizei i = 0; i < count; i++)
+        memory += length[i];
+    mapping_t mapping = mapping_acquire(memory);
+
+    /* Write the string table */
+    char *table = mapping.address;
+    for (GLsizei i = 0; i < count; i++) {
+        memcpy(table, string[i], length[i]);
+        table += length[i];
+    }
+
+    /* Write the pointers for each string after the string table */
+    char **strings = (char **)table;
+    char *current = mapping.address;
+    for (GLsizei i = 0; i < count; i++) {
+        *strings++ = mapping_translate(&mapping, current);
+        current += length[i];
+    }
+
+    /* Write the lengths after the array of pointers to strings */
+    GLint *lengths = (GLint *)strings;
+    for (GLsizei i = 0; i < count; i++)
+        lengths[i] = length[i];
+
+    bbgl_message_call(bbgl_context->message,
+                      mapping.index,
+                      "ShaderSource",
+                      "Iz**",
+                      shader,
+                      count,
+                      mapping_translate(&mapping, table),
+                      mapping_translate(&mapping, lengths));
+    bbgl_sync(bbgl_context);
+    bbgl_flush(bbgl_context);
+
+    mapping_release(&mapping);
 }
 
 void glCompileShader(GLuint shader) {
     bbgl_message_call(bbgl_context->message, 0, "CompileShader", "I",
         shader);
     bbgl_sync(bbgl_context);
-    /* Don't need to flush here since shader compilation can be deferred
-     * until link program */
 }
 
 void glAttachShader(GLuint program, GLuint shader) {
     bbgl_message_call(bbgl_context->message, 0, "AttachShader", "II",
         program, shader);
     bbgl_sync(bbgl_context);
-    /* Dont need to flush here since shader attachment can be deferred
-     * until link program */
 }
 
 void glLinkProgram(GLuint program) {
     bbgl_message_call(bbgl_context->message, 0, "LinkProgram", "I",
         program);
     bbgl_sync(bbgl_context);
-    bbgl_flush(bbgl_context);
 }
 
 void glValidateProgram(GLuint program) {
     bbgl_message_call(bbgl_context->message, 0, "ValidateProgram", "I",
         program);
     bbgl_sync(bbgl_context);
-    bbgl_flush(bbgl_context);
 }
 
 void glUseProgram(GLuint program) {
@@ -225,15 +248,59 @@ GLint glGetUniformLocation(GLuint program, const GLchar *name) {
     mapping_t mapping = mapping_acquire(length);
     char *copy = mapping.address;
     memcpy(copy, name, length);
-    bbgl_message_call(bbgl_context->message, mapping.index, "GetUniformName", "I*",
+    bbgl_message_call(bbgl_context->message, mapping.index, "GetUniformLocation", "I*",
         program, mapping_translate(&mapping, copy));
     bbgl_sync(bbgl_context);
     bbgl_flush(bbgl_context);
-    return bbgl_context->message->asCall.params[0].asInt;
+    return bbgl_context->message->value.asInt;
 }
 
 void glUniform3f(GLint location, GLfloat v0, GLfloat v1, GLfloat v2) {
     bbgl_message_call(bbgl_context->message, 0, "Uniform3f",
         "ifff", location, v0, v1, v2);
     bbgl_sync(bbgl_context);
+}
+
+GLenum glGetError(void) {
+    /* Must flush the recorded commands if we're executing glGetError */
+    bbgl_flush(bbgl_context);
+
+    /* Now issue glGetError */
+    bbgl_message_call(bbgl_context->message, 0, "GetError", "");
+    bbgl_sync(bbgl_context);
+    bbgl_flush(bbgl_context);
+    return bbgl_context->message->value.asEnum;
+}
+
+void glGetShaderiv(GLuint shader, GLenum pname, GLint *params) {
+    mapping_t mapping = mapping_acquire(sizeof *params);
+    bbgl_message_call(bbgl_context->message, mapping.index, "GetShaderiv",
+        "Ie*", shader, pname, mapping.address);
+    bbgl_sync(bbgl_context);
+    bbgl_flush(bbgl_context);
+    *params = *((GLint *)mapping.address);
+    mapping_release(&mapping);
+}
+
+void glGetShaderInfoLog(GLuint shader, GLsizei maxLength, GLsizei *length, GLchar *infoLog) {
+    mapping_t mapping = mapping_acquire(maxLength + sizeof *length);
+    GLsizei *map_length = mapping.address;
+    GLchar *map_infoLog = (GLchar *)(map_length + 1);
+
+    bbgl_message_call(bbgl_context->message,
+                      mapping.index,
+                      "GetShaderInfoLog",
+                      "Iz**",
+                      shader,
+                      maxLength,
+                      mapping_translate(&mapping, map_length),
+                      mapping_translate(&mapping, map_infoLog));
+
+    bbgl_sync(bbgl_context);
+    bbgl_flush(bbgl_context);
+
+    *length = *map_length;
+    memcpy(infoLog, map_infoLog, *map_length);
+
+    mapping_release(&mapping);
 }
