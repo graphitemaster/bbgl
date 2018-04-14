@@ -67,6 +67,9 @@ static void bbgl_context_search(Window *found,
     }
 }
 
+typedef GLXContext (*glXCreateContextAttribsARBProc)
+    (Display*, GLXFBConfig, GLXContext, Bool, const int*);
+
 int bbgl_context_init(bbgl_context_t *context) {
     Display *display = XOpenDisplay(0);
     Window window = 0;
@@ -82,7 +85,20 @@ int bbgl_context_init(bbgl_context_t *context) {
     XVisualInfo *info = glXChooseVisual(display, DefaultScreen(display), attributes);
     if (!info)
         return 0;
-    GLXContext gl = glXCreateContextAttribsARB(display, config[0], NULL, GL_TRUE, glattributes);
+
+    /* Create old OpenGL context to get function pointer for glXCreateContextAttribsARB() */
+    XVisualInfo *visual = glXGetVisualFromFBConfig(display, config[0]);
+    GLXContext gl = glXCreateContext(display, visual, 0, GL_TRUE);
+    glXCreateContextAttribsARBProc pglXCreateContextAttribsARB = 0;
+    *(void **)&pglXCreateContextAttribsARB = glXGetProcAddress((const GLubyte*)"glXCreateContextAttribsARB");
+
+    /* Destroy old context */
+    glXMakeCurrent(display, 0, 0);
+    glXDestroyContext(display, gl);
+    if (!pglXCreateContextAttribsARB)
+        return 0;
+
+    gl = pglXCreateContextAttribsARB(display, config[0], NULL, GL_TRUE, glattributes);
     if (!context)
         return 0;
 
